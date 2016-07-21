@@ -1,0 +1,210 @@
+online-user-job.properties 
+
+nameNode=hdfs://nameservice
+jobTracker=yarnRM
+queueName=default
+examplesRoot=examples
+oozieRoot=oozieRoot
+datasetfrequency=60
+datasetinitialinstance=2014-12-18T9:00+0800
+tz=Asia/Shanghai
+oozie.use.system.libpath=true 
+oozie.libpath=${nameNode}/user/
+datasetURI=${nameNode}/user/
+hiveMetadataURI=${nameNode}/user
+userOnlineTmpPrefix=
+reRun=false
+envFlag=push
+#jdbc properties
+mysql.username=
+mysql.password=
+mysql.jdbcUrl=
+mysql.replace.into.sql=
+
+oozie.coord.application.path=${nameNode}/user/${user.name}/${oozieRoot}/stats/
+start=2016-01-13T08:10+0800
+end=2114-12-7T17:30+0800
+oozie.use.system.libpath=true
+workflowAppUri=${nameNode}/user/${user.name}/${oozieRoot}/stats/online-user-workflow.xml
+
+=================================
+online-user-workflow.xml
+
+<workflow-app xmlns="uri:oozie:workflow:0.2" name="hive-wf">
+    <start to="hive-node"/>
+
+    <action name="hive-node">
+        <hive xmlns="uri:oozie:hive-action:0.2">
+            <job-tracker>${jobTracker}</job-tracker>
+            <name-node>${nameNode}</name-node>
+            <prepare>
+            </prepare>
+            <job-xml>${nameNode}/user/hive/hive-site.xml</job-xml> 
+            <configuration>
+                <property>
+                    <name>mapred.job.queue.name</name>
+                    <value>${queueName}</value>
+                </property>
+                <property>
+                    <name>oozie.hive.defaults</name>
+                    <value>${nameNode}/user/hive/hive-site.xml</value>
+                </property>
+            </configuration>
+            <script>${nameNode}/user/oozieRoot/stats/xxx.hql</script>
+            <param>HDFS=${wfOnlineInput}</param>
+            <param>INPUT=${datasetURI}/${statsYear}/${statsMonth}/${statsDay}</param>
+            <param>stats_date=${concat(concat(statsYear, statsMonth), statsDay)}</param>
+            <param>stats_year=${statsYear}</param>
+            <param>stats_month=${statsMonth}</param>
+            <param>stats_day=${statsDay}</param>
+            <param>stats_hour=${concat('hour_',statsHour)}</param>
+            <!--
+            <param>jdbcUrl=${mysql.jdbcUrl}</param>
+            <param>mysql.username=${mysql.username}</param>
+            <param>mysql.password=${mysql.password}</param>
+            <param>mysql.stats.day.sql=${mysql.replace.into.sql}</param>
+            -->
+        </hive>
+        <ok to="fork-stats"/>
+        <error to="fail"/>
+    </action>
+
+    <fork name="fork-stats">                                                                                                                          <path start="stats-hour-user_online" />
+        <path start="stats-day-user_online" />
+    </fork>    
+
+    <action name="stats-hour-user_online">
+        <java>
+            <job-tracker>${jobTracker}</job-tracker>
+            <name-node>${nameNode}</name-node>
+            <configuration>
+                <property>
+                    <name>mapred.job.queue.name</name>
+                    <value>${queueName}</value>
+                </property>
+            </configuration>
+            <main-class>cn.StatsMain</main-class>
+            <arg>${reRun}</arg> 
+            <arg>${envFlag}</arg>
+            <arg>${statsDate}</arg>
+            <arg>user_online</arg>
+            <arg>hour</arg>
+            <arg>external</arg>
+        </java>
+        <ok to="join-stats"/>
+        <error to="fail"/>
+    </action>
+    <action name="stats-day-user_online">
+        <java>
+            <job-tracker>${jobTracker}</job-tracker>
+            <name-node>${nameNode}</name-node>
+            <configuration>
+                <property>
+                    <name>mapred.job.queue.name</name>
+                    <value>${queueName}</value>
+                </property>
+            </configuration>
+            <main-class>cn.StatsMain</main-class>
+            <arg>${reRun}</arg> 
+            <arg>${envFlag}</arg>
+            <arg>${statsDate}</arg>
+            <arg>user_online</arg>
+            <arg>day</arg>
+            <arg>external</arg>
+        </java>
+        <ok to="join-stats"/>
+        <error to="fail"/>
+    </action>
+
+    <join name="join-stats" to="end"/>
+
+    <kill name="fail">
+        <message>Hive failed, error message[${wf:errorMessage(wf:lastErrorNode())}]</message>
+    </kill>
+    <end name="end"/>
+</workflow-app>
+
+=================================================
+online-user-coordinator.xml
+
+<coordinator-app name="user_online-hive-coord" frequency="${coord:hours(1)}" start="${start}" end="${end}" timezone="${tz}"
+                 xmlns="uri:oozie:coordinator:0.2">
+
+    <datasets>
+        <dataset name="userOnlineInput" frequency="${coord:hours(1)}" initial-instance="${datasetinitialinstance}"
+            timezone="${tz}">
+            <uri-template>${datasetURI}/${YEAR}/${MONTH}/${DAY}/${YEAR}${MONTH}${DAY}${HOUR}</uri-template>
+            <done-flag></done-flag>
+        </dataset>
+        <dataset name="userOnlineStats" frequency="${coord:days(1)}" initial-instance="${datasetinitialinstance}" 
+            timezone="${tz}">
+                <uri-template>${hiveMetadataURI}/user_online/month=${YEAR}${MONTH}/day=${DAY}</uri-template>
+        </dataset>
+
+    </datasets>
+    <input-events>
+        <data-in name="coord-online-input" dataset="userOnlineInput">
+            <start-instance>${coord:current(0)}</start-instance>
+            <end-instance>${coord:current(0)}</end-instance>
+        </data-in>
+    </input-events>
+    <output-events>
+        <data-out name="coord-online-output" dataset="userOnlineStats">
+            <instance>${coord:current(0)}</instance>
+        </data-out>
+    </output-events>
+
+     <action>
+        <workflow>
+            <app-path>${workflowAppUri}</app-path>
+            <configuration>
+                <property>
+                    <name>jobTracker</name>
+                    <value>${jobTracker}</value>
+                </property>
+                <property>
+                    <name>nameNode</name>
+                    <value>${nameNode}</value>
+                </property>
+                <property>
+                    <name>queueName</name>
+                    <value>${queueName}</value>
+                </property>
+                <property>
+                    <name>nominalTime</name>
+                    <value>${coord:nominalTime()}</value>
+                </property>
+                <property>
+                    <name>statsDate</name>
+                    <value>${coord:formatTime(coord:nominalTime(), 'yyyyMMddHH')}</value>
+                </property>
+                <property>
+                    <name>statsYear</name>
+                    <value>${coord:formatTime(coord:nominalTime(), 'yyyy')}</value>
+                </property>
+                <property>
+                    <name>statsMonth</name>
+                    <value>${coord:formatTime(coord:nominalTime(), 'MM')}</value>
+                </property>
+                <property>
+                    <name>statsDay</name>
+                    <value>${coord:formatTime(coord:nominalTime(), 'dd')}</value>
+                </property>
+                <property>
+                    <name>statsHour</name>
+                    <value>${coord:formatTime(coord:nominalTime(), 'HH')}</value>
+                </property>
+                <property>
+                    <name>wfOnlineInput</name>
+                    <value>${coord:dataIn('coord-online-input')}</value>
+                </property>
+
+                <property>
+                    <name>wfOnlineOutput</name>
+                    <value>${coord:dataOut('coord-online-output')}</value>
+                </property>
+            </configuration>
+        </workflow>
+    </action>
+</coordinator-app>
+
