@@ -1,0 +1,16 @@
+============设置输出snappy压缩============
+String itime = args[0];
+conf.set("itime", itime);
+conf.setBoolean("mapreduce.output.fileoutputformat.compress", true);
+conf.setClass("mapreduce.output.fileoutputformat.compress.codec", SnappyCodec.class, CompressionCodec.class);
+Job job = Job.getInstance(conf, "kpi-activearea-filling-" + itime);
+job.setJarByClass(KpiActiveAreaFillingDataMR.class);
+job.setMapperClass(StatMapper.class);
+job.setReducerClass(StatReducer.class);
+job.setMapOutputKeyClass(Text.class);
+job.setMapOutputValueClass(Text.class);
+job.setOutputKeyClass(NullWritable.class);
+job.setOutputValueClass(Text.class);
+job.setInputFormatClass(TextInputFormat.class);
+job.setOutputFormatClass(TextOutputFormat.class);
+job.setNumReduceTasks(50);
