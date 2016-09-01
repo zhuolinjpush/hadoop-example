@@ -1,0 +1,41 @@
+log4j.appender.SLOG.Encoding=UTF-8
+
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration status="warn">
+  <appenders>
+    <console name="Console" target="SYSTEM_OUT">
+      <PatternLayout pattern="%d{HH:mm:ss.SSS} [%t] %-5level %logger{36} - %msg%n"/>
+    </console>
+    <RollingFile name="fileappender" fileName="${sys:user.home}/logs/unknown-uid/info.log" 
+        filePattern="${sys:user.home}/logs/unknown-uid/info.log.%d{yyyy-MM-dd}">  
+        <PatternLayout pattern="[%d{HH:mm:ss:SSS}] [%p] - %l - %m%n"/>
+        <Filters>
+            <ThresholdFilter level="INFO"/>
+            <ThresholdFilter level="WARN" onMatch="DENY" onMismatch="NEUTRAL"/>
+        </Filters>
+        <PatternLayout pattern="[%d{HH:mm:ss:SSS}] [%p] - %l - %m%n"/>
+        <Policies>
+            <TimeBasedTriggeringPolicy/>
+            <SizeBasedTriggeringPolicy size="500 MB"/>
+        </Policies> 
+    </RollingFile> 
+    <RollingFile name="errorappender" fileName="${sys:user.home}/logs/unknown-uid/error.log" 
+        filePattern="${sys:user.home}/logs/unknown-uid/error.log.%d{yyyy-MM-dd}">  
+        <PatternLayout pattern="[%d{HH:mm:ss:SSS}] [%p] - %l - %m%n"/>
+        <Policies>
+            <TimeBasedTriggeringPolicy/>
+            <SizeBasedTriggeringPolicy size="500 MB"/>
+        </Policies>  
+    </RollingFile>   
+  </appenders>
+  <loggers>
+    <root level="INFO">
+        <appender-ref ref="Console"/>
+        <appender-ref ref="fileappender"/>
+        <appender-ref ref="errorappender"/>      
+    </root>
+    <root level="ERROR">
+        <appender-ref ref="errorappender"/>      
+    </root>
+  </loggers>
+</configuration>
