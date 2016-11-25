@@ -4,61 +4,65 @@ import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileReader;
 import java.io.IOException;
+import java.lang.reflect.ParameterizedType;
+import java.lang.reflect.Type;
 
-import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.hive.ql.exec.vector.BytesColumnVector;
-import org.apache.hadoop.hive.ql.exec.vector.VectorizedRowBatch;
-import org.apache.orc.CompressionKind;
-import org.apache.orc.OrcFile;
-import org.apache.orc.OrcFile.WriterOptions;
-import org.apache.orc.TypeDescription;
-import org.apache.orc.Writer;
+import org.apache.hadoop.hive.ql.io.orc.OrcOutputFormat;
+import org.apache.hadoop.hive.ql.io.orc.OrcSerde;
+import org.apache.hadoop.hive.serde2.objectinspector.ObjectInspectorFactory;
+import org.apache.hadoop.hive.serde2.objectinspector.StructObjectInspector;
+import org.apache.hadoop.io.NullWritable;
+import org.apache.hadoop.mapred.JobConf;
+import org.apache.hadoop.mapred.RecordWriter;
+import org.apache.hadoop.mapred.Reporter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.google.common.base.Strings;
-
-public abstract class AbstractOrcLocalHelper {
+public abstract class AbstractOrcLocalHelper<T> {
 
     protected static final Logger logger = LoggerFactory.getLogger(AbstractOrcLocalHelper.class);
-    private TypeDescription schema;
     private String inputFile;
     private String hdfsFile;
-    private Writer orcWriter;
+    //hive 
+    private StructObjectInspector inspector;
+    private OrcSerde serde;
+    private RecordWriter writer;
+    private FileSystem fs;
     
-    public AbstractOrcLocalHelper(String columns, String inputFile, String hdfsFile) {
+    public AbstractOrcLocalHelper(String inputFile, String hdfsFile) {
         this.inputFile = inputFile;
         this.hdfsFile = hdfsFile;
-        createStringSchema(columns);
     }
     
-    protected void createStringSchema(String columns) {
-        if (Strings.isNullOrEmpty(columns)) {
-            logger.error("schema error");
-            System.exit(0);
-        }
-        this.schema = TypeDescription.createStruct();
-        for (String field : columns.trim().split(",")) {
-            this.schema.addField(field, TypeDescription.createString());
-        }
-        logger.info("schema:" + this.schema.toJson() + " " + this.schema.toString());
+    @SuppressWarnings("unchecked")
+    protected void createStringSchema() {
+        Type t = getClass().getGenericSuperclass();
+        ParameterizedType param = (ParameterizedType) t;
+        Class<T> cls = (Class<T>) param.getActualTypeArguments()[0];
+        logger.info("class:" + cls);
+        this.inspector = (StructObjectInspector) ObjectInspectorFactory.getReflectionObjectInspector(cls, 
+                                                ObjectInspectorFactory.ObjectInspectorOptions.JAVA);
+        this.serde = new OrcSerde();
+        logger.info(this.inspector.toString());
     }
 
-    protected void initOrcWriter() {
+    private void initOrcWriter() {
         try {
-            Configuration conf = new Configuration();
-            WriterOptions opts = OrcFile.writerOptions(conf);
-            opts.setSchema(this.schema);
-            opts.compress(CompressionKind.SNAPPY);
-            this.orcWriter = OrcFile.createWriter(new Path(this.hdfsFile), opts);
+            createStringSchema();
+            JobConf conf = new JobConf();
+            fs = FileSystem.get(conf);
+            OrcOutputFormat outputFormat = new OrcOutputFormat();
+            this.writer = outputFormat.getRecordWriter(fs, conf, new Path(this.hdfsFile).toString(), Reporter.NULL);
         } catch (Exception e) {
             logger.error("init orc writer error", e);
         }
     }
     
-    public abstract String[] mkline(String line);
+    public abstract T mkline(String line);
     
+    @SuppressWarnings("unchecked")
     public void process() {
         File file = new File(this.inputFile);
         if (!file.exists() || !file.isFile()) {
@@ -68,26 +72,17 @@ public abstract class AbstractOrcLocalHelper {
         initOrcWriter();
         BufferedReader reader = null;
         try {
-            VectorizedRowBatch rowBatch = this.schema.createRowBatch();
             reader = new BufferedReader(new FileReader(file));
-            
             String line = null;
-            String[] arr = null;
             long count = 0;
-            int row = 0;
+            T t = null;
             while ((line = reader.readLine()) != null) {
-                arr = mkline(line);
-                if (arr == null) {
+                t = mkline(line);
+                if (t == null) {
                     continue;
                 }
-                row = rowBatch.size++;
-                for (int i = 0; i < arr.length; i++) {
-                    ((BytesColumnVector)rowBatch.cols[i+1]).setVal(row, arr[i].getBytes());
-                }
-                if (rowBatch.size == rowBatch.getMaxSize()) {
-                    orcWriter.addRowBatch(rowBatch);
-                    rowBatch.reset();
-                }
+                this.writer.write(NullWritable.get(), serde.serialize(t, this.inspector));
+                
                 count++;
                 if (count % 10000 == 0) {
                     logger.info("process count=" + count);
@@ -99,7 +94,8 @@ public abstract class AbstractOrcLocalHelper {
             logger.error("process error", e);
         } finally {
             try {
-                this.orcWriter.close();
+                this.writer.close(Reporter.NULL);
+                fs.close();
             } catch (IOException e) {
                 logger.error("close orc writer error", e);
             }
