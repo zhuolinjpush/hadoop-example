@@ -3,6 +3,7 @@ String itime = args[0];
 conf.set("itime", itime);
 conf.setBoolean("mapreduce.output.fileoutputformat.compress", true);
 conf.setClass("mapreduce.output.fileoutputformat.compress.codec", SnappyCodec.class, CompressionCodec.class);
+conf.set("mapreduce.output.basename", itime);  //修改输出前缀
 Job job = Job.getInstance(conf, "kpi-activearea-filling-" + itime);
 job.setJarByClass(KpiActiveAreaFillingDataMR.class);
 job.setMapperClass(StatMapper.class);
