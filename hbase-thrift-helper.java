@@ -68,6 +68,30 @@ public class AppStatsThriftHelper {
         }
         return flag;
     }
+    
+    public void updataBatch(List<String[]> list, long timestamp, boolean writeToWAL) {
+        //list arr : row / family / qualifier / val
+        long start = System.currentTimeMillis();
+        try {
+            List<BatchMutation> batchMutations = new ArrayList<BatchMutation>();
+            List<Mutation> mutations = null;
+            for (String[] arr : list) {
+                mutations = new ArrayList<Mutation>();
+                mutations.add(new Mutation(false, ByteBuffer.wrap((arr[1] + ":" + arr[2]).getBytes()), bytes(Bytes.toBytes(Integer.valueOf(arr[3]))), writeToWAL));
+                batchMutations.add(new BatchMutation(bytes(Bytes.toBytes(arr[0])), mutations));
+            }
+            client.mutateRowsTs(LBS_TABLE, batchMutations, timestamp, attributes);  
+        } catch (Exception e) {
+            LOG.error("update hbase error", e);
+            init();
+            try {
+                Thread.sleep(5000);
+            } catch (InterruptedException e1) {
+                LOG.error("sleep error", e1);
+            }//5s
+        }
+        LOG.info("hbase update batch size=" + list.size() + ", cost=" + (System.currentTimeMillis() - start));
+    }
 
     public Map<String, Double> query(List<String> rowkeyList, String column) {
         long start = System.currentTimeMillis();
