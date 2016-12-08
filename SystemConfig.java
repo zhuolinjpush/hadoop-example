@@ -13,20 +13,10 @@ import org.slf4j.LoggerFactory;
 
 import sun.security.util.PropertyExpander;
 
-/**
- * This is the single entry point for accessing configuration properties.
- * 
- */
 public class SystemConfig
 {
     private static Properties mConfig;
-
-	private static Logger LOG = LoggerFactory.getLogger(SystemConfig.class);
-//    private static Log log = LogFactory.getFactory().getInstance(SystemConfig.class);
-
-    /*
-     * Static block run once at class loading We load the default properties and any custom properties we find
-     */
+    private static Logger LOG = LoggerFactory.getLogger(SystemConfig.class);
     static
     {
         mConfig = new Properties();
