@@ -15,3 +15,40 @@ job.setOutputValueClass(Text.class);
 job.setInputFormatClass(TextInputFormat.class);
 job.setOutputFormatClass(TextOutputFormat.class);
 job.setNumReduceTasks(50);
+============= Reduce 输出多目录(run方法不用改) ===========
+public static class StatReducer extends Reducer<LongWritable, Text, NullWritable, Text> {
+        private static SimpleDateFormat sdf = new SimpleDateFormat("yyyyMMdd");
+        private MultipleOutputs<NullWritable, Text> outputs;  
+        @Override
+        protected void setup(Context context) throws IOException,
+                InterruptedException {
+            outputs = new MultipleOutputs<NullWritable, Text>(context);
+        }
+        @Override
+        protected void reduce(LongWritable key, Iterable<Text> values,
+                Context context) throws IOException, InterruptedException {
+            try {
+                String[] arr = null;
+                for (Text tx : values) {
+                    arr = tx.toString().split("\t");
+                    long itime = Long.parseLong((arr[5] + "000000000").substring(0, 13));
+                    if (itime > 1481990400000L) {
+                        outputs.write(NullWritable.get(), tx, "20161217/");
+                    } else if (itime < 1451577600000L) {
+                        outputs.write(NullWritable.get(), tx, "20160101/");
+                    } else {
+                        String iday = sdf.format(new Date(itime));
+                        outputs.write(NullWritable.get(), tx, iday + "/");
+                    }
+                    
+                }
+            } catch (Exception e) {
+                logger.error("reduce error", e);
+            }
+        }
+        @Override
+        protected void cleanup(Context context)
+                throws IOException, InterruptedException {
+            outputs.close();
+        }
+    }
