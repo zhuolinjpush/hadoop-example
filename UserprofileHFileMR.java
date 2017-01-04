@@ -96,7 +96,7 @@ public class UserprofileHFileMR implements Tool {
         FileOutputFormat.setOutputPath(job, new Path(output));
         
         //hbase
-        Configuration hbaseConf = HBaseConfiguration.create();
+        Configuration hbaseConf = HBaseConfiguration.create(conf);
         Connection hbaseConnection = ConnectionFactory.createConnection(hbaseConf);
         Table table = hbaseConnection.getTable(TableName.valueOf(tableName));
         RegionLocator regionLocator = hbaseConnection.getRegionLocator(TableName.valueOf(tableName));
