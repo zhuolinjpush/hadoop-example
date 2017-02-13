@@ -1,0 +1,6 @@
+	
+安装hadoop客户端和hbase客户端，参考jpush业务安装客户端，并拷贝配置文件
+下载kylin 安装包，http://apache.fayea.com/kylin/
+解压，~/.bash_profile 配置 export KYLIN_HOME=/opt/push/kylin/kylin
+修改kylin.properties  kylin.hdfs.working.dir , kylin.hbase.cluster.fs
+启动，nohup ./bin/kylin.sh start &  停止用./bin/kylin.sh stop
