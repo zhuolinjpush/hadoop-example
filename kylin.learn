@@ -1,6 +1,15 @@
-	
 安装hadoop客户端和hbase客户端，参考jpush业务安装客户端，并拷贝配置文件
 下载kylin 安装包，http://apache.fayea.com/kylin/
 解压，~/.bash_profile 配置 export KYLIN_HOME=/opt/push/kylin/kylin
 修改kylin.properties  kylin.hdfs.working.dir , kylin.hbase.cluster.fs
 启动，nohup ./bin/kylin.sh start &  停止用./bin/kylin.sh stop
+http://kylin.apache.org/blog/2016/06/10/standalone-hbase-cluster/
+**** 重要 ***** //需要将hbase的hdfs 设置复制到hadoop-conf/hdfs-site.xml(如下和其他相关配置)，然后删除hbase-conf/的hdfs-site.xml 和 core-site.xml
+In details, merge NN-HA related configs of two clusters, including dfs.nameservices, dfs.ha.namenodes., dfs.client.failover.proxy.provider. and other related.
+
+These configs should be updated into hdfs-site.xml in Kylin Server and Resource Manager of main cluster, also be added into kylin_job_conf.xml. [相关配置是否要添加到 kylin_job_conf.xml ]
+
+  <property>
+    <name>dfs.nameservices</name>
+    <value>nameservice1,nameservice-test1</value>
+  </property>
