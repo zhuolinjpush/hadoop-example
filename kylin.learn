@@ -13,3 +13,10 @@ These configs should be updated into hdfs-site.xml in Kylin Server and Resource 
     <name>dfs.nameservices</name>
     <value>nameservice1,nameservice-test1</value>
   </property>
+  
+Kylin 的工作原理本质上是MOLAP 多维立方体分析
+kylin 不能执行的查询引导去 Hive 中继续执行 [耗时很久，默认是关闭的]
+维度和度量(count、sum) 是数据分析中的两个基本概念
+数据挖掘有几种常见的多维数据模型：星形模型、雪花模型、事实星座模型
+加载表的结构信息时会触发MR 计算每个列的维度cardinality 【使用HyperLogLog 近似算法，与精确值略有误差】
+Cube 维度 Derived 衍生维度，逻辑上可以认为衍生列来自维度表的维度
