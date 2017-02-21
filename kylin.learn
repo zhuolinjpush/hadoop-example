@@ -23,3 +23,19 @@ Cube 维度 Derived 衍生维度，逻辑上可以认为衍生列来自维度表
 ---------------------- kylin.security testing -------------
 //使用testing 也可以配置账号和密码
 配置文件：kylin/tomcat/webapps/kylin/WEB-INF/classes/kylinSecurity.xml
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
+public class GeneBasicPasswd {
+    public static void main(String[] args) {
+//        <dependency>
+//            <groupId>org.springframework.security</groupId>
+//            <artifactId>spring-security-core</artifactId>
+//            <version>4.0.0.RELEASE</version>
+//        </dependency>
+        String password = "KYLIN";
+        PasswordEncoder encoder = new BCryptPasswordEncoder();
+        String encodePassword = encoder.encode(password);
+        System.out.println(encodePassword);
+    }
+
+}
