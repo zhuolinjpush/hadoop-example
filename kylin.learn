@@ -39,3 +39,5 @@ public class GeneBasicPasswd {
     }
 
 }
+//Delete Segment  --- 只能删头和尾
+curl -H "Authorization: Basic QURNSU46S1lMSU5AMjAxNw==" -H "Content-Type: application/json"  -X DELETE http://172.0.0.1:7070/kylin/api/cubes/Cube_Active_User/segs/20170226000000_20170227000000
