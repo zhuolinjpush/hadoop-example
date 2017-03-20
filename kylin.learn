@@ -67,3 +67,8 @@ job步骤：
    将Cuboid数据转换成HFile，并导入到HBase Table中
 9、Update Cube Info 更新Cube状态
 10、Hive Cleanup 删除中间表数据
+------------------
+kylin+mondrain+saiku 
+https://linpingta.github.io/blog/2016/10/25/saiku-install/
+登录需要注册license http://licensing.meteorite.bi/licenses?form
+jiguang jiguang.cn 首先注册，然后创建company ,创建license ，然后下载到本地，然后172.16.99.59:8080/upload.html 上传license [可能需要登录admin/admin]
