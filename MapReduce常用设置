@@ -52,3 +52,7 @@ public static class StatReducer extends Reducer<LongWritable, Text, NullWritable
             outputs.close();
         }
     }
+    ------------ java read hdfs ----------
+    	
+java.io.IOException: No FileSystem for scheme: hdfs 添加如下：
+config.set("fs.hdfs.impl",org.apache.hadoop.hdfs.DistributedFileSystem.class.getName());  
