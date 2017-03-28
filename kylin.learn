@@ -77,3 +77,9 @@ http://www.feellin.com/hyperloglogde-he-xin-si-xiang-yuan-li/
 HyperLogLog 不是统计算法，不是数据估计算法，而是基数估计算法 (基数是个去重统计)
 简单来说，每个需要被计数的值都会经过特定Hash函数的计算，将得到的哈希值放入到byte数组中，最后根据特定算法对byte数据的内容进行统计，就可以得到近似的去重结果。
 这种方式的好处是，不论数据有多少，byte数组的大小是有理论上限的，通常不会超过128KB，存储压力非常小。也就是说能够满足超大数据集和快速响应的要求。
+--------------------
+curl -X POST -H "Authorization: Basic 1234==" -H "Content-Type: application/json" -d '{"sql":"select appkey,iday,sum(DISTINCT_UID_COUNT) from app.KYLIN_CHANNEL_ONLINE_USER_DAY where appkey=\u0027b500cb8d7b70984eca9e634b\u0027 group by appkey,iday limit 10","offset":0,"project":"Pro_Push_Kpi"}' http://localhost:7070/kylin/api/query
+
+双引号\u0027
+或者：
+curl -X POST -H "Authorization: Basic 1234==" -H "Content-Type: application/json" -d '{"sql":"select appkey,iday,sum(DISTINCT_UID_COUNT) from app.KYLIN_CHANNEL_ONLINE_USER_DAY where appkey='\''b500cb8d7b70984eca9e634b'\'' group by appkey,iday limit 10","offset":0,"project":"Pro_Push_Kpi"}' http://localhost:7070/kylin/api/query
