@@ -83,3 +83,5 @@ curl -X POST -H "Authorization: Basic 1234==" -H "Content-Type: application/json
 双引号\u0027
 或者：
 curl -X POST -H "Authorization: Basic 1234==" -H "Content-Type: application/json" -d '{"sql":"select appkey,iday,sum(DISTINCT_UID_COUNT) from app.KYLIN_CHANNEL_ONLINE_USER_DAY where appkey='\''b500cb8d7b70984eca9e634b'\'' group by appkey,iday limit 10","offset":0,"project":"Pro_Push_Kpi"}' http://localhost:7070/kylin/api/query
+-----查看cuboid和量级------
+./bin/kylin.sh org.apache.kylin.engine.mr.common.CubeStatsReader Cube__User_Day
