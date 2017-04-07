@@ -85,3 +85,16 @@ curl -X POST -H "Authorization: Basic 1234==" -H "Content-Type: application/json
 curl -X POST -H "Authorization: Basic 1234==" -H "Content-Type: application/json" -d '{"sql":"select appkey,iday,sum(DISTINCT_UID_COUNT) from app.KYLIN_CHANNEL_ONLINE_USER_DAY where appkey='\''b500cb8d7b70984eca9e634b'\'' group by appkey,iday limit 10","offset":0,"project":"Pro_Push_Kpi"}' http://localhost:7070/kylin/api/query
 -----查看cuboid和量级------
 ./bin/kylin.sh org.apache.kylin.engine.mr.common.CubeStatsReader Cube__User_Day
+----------------
+版本 pip install caravel==0.8.9  这里最好全部使用anaconda
+下载 git clone https://github.com/rocky1001/caravel.git 或者https://pypi.tuna.tsinghua.edu.cn/simple/caravel/
+进入目录 pip install .
+创建admin 账号和密码： fabmanager create-admin --app caravel   【jiguang  zhuo lin admin2017】
+初始化源数据 caravel db upgrade
+初始化用户角色 caravel init
+下载 wget –no-check-certificate https://github.com/rocky1001/pykylin/archive/caravel-kylin.zip
+第6不完整使用源码来安装 git clone https://github.com/rocky1001/pykylin.git
+pip install .
+启动 nohup  ~/anaconda2/bin/gunicorn -w 16 --timeout 60 -b 172.16.98.61:8088 caravel:app >> log.caravel 2>&1 &
+kil的话：ps ax |grep gunicorn|grep -v 'grep' |xargs kill -9
+配置数据源：kylin://ADMIN:test1@172.16.88.66:7070/kylin/api?project=Pro_Push_Kpi
