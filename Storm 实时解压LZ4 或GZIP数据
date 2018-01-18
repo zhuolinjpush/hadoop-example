@@ -1,0 +1,353 @@
+package cn.jpush.kafka;
+
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Properties;
+import java.util.Set;
+import java.util.zip.GZIPInputStream;
+
+import org.apache.commons.compress.compressors.lz4.FramedLZ4CompressorInputStream;
+import org.apache.kafka.clients.producer.KafkaProducer;
+import org.apache.kafka.clients.producer.Producer;
+import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.storm.spout.SpoutOutputCollector;
+import org.apache.storm.task.TopologyContext;
+import org.apache.storm.topology.OutputFieldsDeclarer;
+import org.apache.storm.topology.base.BaseRichSpout;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import cn.jpush.flume.MQConsumer;
+import cn.jpush.utils.SystemConfig;
+
+import com.alibaba.fastjson.JSON;
+import com.alibaba.fastjson.JSONArray;
+import com.alibaba.fastjson.JSONObject;
+import com.rabbitmq.client.QueueingConsumer.Delivery;
+
+public class MsgTargetToKafkaSpout extends BaseRichSpout {
+
+    private static final long serialVersionUID = 1L;
+    private static final Logger LOG = LoggerFactory
+            .getLogger(MsgTargetToKafkaSpout.class);
+    private static int MQ_RECONN_SLEEP = 3000;// ms
+
+    private MQConsumer loader;
+    private String[] mqlist;
+    private String key;
+    private final String topic;
+    private Producer<String, String> producer;
+    private long lastFailed = 0;
+    private static final String HIVE_SEP = "\u0001";
+    private static Set<String> target_Steps = new HashSet<String>();
+    private StringBuilder builder = new StringBuilder();
+    private long count = 0;
+
+    public MsgTargetToKafkaSpout(String[] mqlist, String topic) {
+        this.mqlist = mqlist;
+        this.topic = topic;
+    }
+
+    private void initKafkaProducer() {
+        try {
+            Properties props = new Properties();
+            props.put("bootstrap.servers",
+                    SystemConfig.getProperty("kafka.metadata.broker.list"));
+            props.put("acks", "1");// 0:写入到socket; 1:写入leader,存在丢失可能 ;
+                                   // all:至少一个同步副本,不会丢失
+            props.put("retries", 2);// 重试次数
+            props.put("batch.size", 16384);
+            props.put("linger.ms", 500);
+            props.put("buffer.memory", 33554432);
+            props.put("key.serializer",
+                    "org.apache.kafka.common.serialization.StringSerializer");
+            props.put("value.serializer",
+                    "org.apache.kafka.common.serialization.StringSerializer");
+            props.put("offsets.storage", "kafka");
+            producer = new KafkaProducer<>(props);
+        } catch (Exception e) {
+            LOG.error("init kafka producer error", e);
+        }
+    }
+
+    @SuppressWarnings("rawtypes")
+    @Override
+    public void open(Map conf, TopologyContext context,
+            SpoutOutputCollector collector) {
+        target_Steps.add("seg-to-pushtask");
+        // target_Steps.add("seg-to-apns"); 数据量太大了，离线补apns
+        target_Steps.add("seg-to-mpns");
+        target_Steps.add("seg-to-mipns");
+        target_Steps.add("seg-to-hpns");
+        target_Steps.add("seg-to-mzpns");
+        target_Steps.add("seg-to-fcmmsg");
+
+        int taskId = context.getThisTaskId();
+        int index = taskId % mqlist.length;
+        this.key = mqlist[index];
+        connectMQ();
+        initKafkaProducer();
+    }
+
+    @Override
+    public void nextTuple() {
+        try {
+            count++;
+            Delivery delivery = loader.next();
+            if (null != delivery) {
+                String message = null;
+                try {
+                    try {
+                        String encoding = delivery.getProperties()
+                                .getContentEncoding();
+                        LOG.info("encoding:" + encoding);
+                        if ("gzip".equals(encoding)) {
+                            message = (new String(
+                                    uncompressGzip(delivery.getBody()))).trim();
+                        } else if ("lz4".equals(encoding)) {
+                            message = (new String(
+                                    uncompressLz4(delivery.getBody()))).trim();
+                        } else {
+                            message = new String(delivery.getBody());
+                        }
+                        LOG.info("data:" + message);
+                    } catch (Exception e1) {
+                        LOG.error("uncompress msg error " + message, e1);
+                    }
+                    if (null == message) {
+                        LOG.error("message is empty");
+                    } else {
+                        try {
+                            JSONObject obj = JSON.parseObject(message);
+                            if (obj.get("rows") == null) {
+                                process(obj);
+                            } else {
+                                JSONArray arr = obj.getJSONArray("rows");
+                                for (int index = 0; index < arr.size(); index++) {
+                                    process(arr.getJSONObject(index));
+                                }
+                            }
+                        } catch (Exception e1) {
+                            LOG.error("parse msg error " + message, e1);
+                        }
+                    }
+
+                    // print
+                    if (count % 5000 == 0) {
+                        LOG.info("msglc spout:" + message);
+                        count = 0;
+                    }
+
+                } catch (Exception ex) {
+
+                    LOG.error("Could not send message", ex);
+                    long current = System.currentTimeMillis();
+                    if (lastFailed > 0 && (current - lastFailed) < 3000) {
+                        reconnectKafka();
+                    }
+                    lastFailed = current;
+                }
+            }// end if delivery is not null.
+        } catch (Exception e) {
+            LOG.error("consume mq error", e);
+            connectMQ();
+        }
+    }
+
+    public byte[] uncompressGzip(byte[] bytes) {
+        if (bytes == null || bytes.length == 0) {
+            return null;
+        }
+
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        ByteArrayInputStream in = new ByteArrayInputStream(bytes);
+        GZIPInputStream ungzip = null;
+        try {
+            ungzip = new GZIPInputStream(in);
+            byte[] buffer = new byte[256];
+            int n;
+            while ((n = ungzip.read(buffer)) >= 0) {
+                out.write(buffer, 0, n);
+            }
+        } catch (Exception e) {
+            LOG.error("gzip uncompress error.", e);
+        } finally {
+            if (ungzip != null) {
+                try {
+                    ungzip.close();
+                } catch (IOException e) {
+                    LOG.error("close error", e);
+                }
+            }
+            if (null != in) {
+                try {
+                    in.close();
+                } catch (IOException e) {
+                    LOG.error("close error", e);
+                }
+            }
+        }
+
+        return out.toByteArray();
+    }
+
+    public byte[] uncompressLz4(byte[] bytes) {
+        if (bytes == null || bytes.length == 0) {
+            return null;
+        }
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        ByteArrayInputStream in = new ByteArrayInputStream(bytes);
+        FramedLZ4CompressorInputStream fLZ4_InputStream = null;
+        try {
+            fLZ4_InputStream = new FramedLZ4CompressorInputStream(in);
+            byte[] buffer = new byte[256];
+            int n;
+            while ((n = fLZ4_InputStream.read(buffer)) >= 0) {
+                out.write(buffer, 0, n);
+            }
+        } catch (Exception e) {
+            LOG.error("lz4 uncompress error.", e);
+        } finally {
+            if (fLZ4_InputStream != null) {
+                try {
+                    fLZ4_InputStream.close();
+                } catch (IOException e) {
+                    LOG.error("close error", e);
+                }
+            }
+            if (null != in) {
+                try {
+                    in.close();
+                } catch (IOException e) {
+                    LOG.error("close error", e);
+                }
+            }
+        }
+        return out.toByteArray();
+    }
+    public void process(JSONObject obj) {
+        try {
+            if (obj.containsKey("uids")) {
+                long msgid = obj.getLong("msg_id");
+                if (msgid == 1) {
+                    return;
+                }
+                String step = obj.getString("step").trim();
+                if (!target_Steps.contains(step)) {
+                    return;
+                }
+                String appkey = "null";
+                if (obj.containsKey("appkey")) {
+                    appkey = obj.getString("appkey").trim();
+                }
+                String platform = "null";
+                if (obj.containsKey("platform")) {
+                    platform = obj.getString("platform").toLowerCase();
+                }
+                long itime = obj.getLong("itime");
+                JSONArray arr = obj.getJSONArray("uids");
+                for (int i = 0; i < arr.size(); i++) {
+                    long uid = arr.getJSONObject(i).getLong("uid");
+                    builder.delete(0, builder.length());
+                    builder.append(appkey).append(HIVE_SEP).append(platform)
+                            .append(HIVE_SEP).append(msgid).append(HIVE_SEP)
+                            .append(uid).append(HIVE_SEP).append(itime);
+
+                    // LOG.info(builder.toString());
+                    producer.send(new ProducerRecord<String, String>(topic,
+                            builder.toString()));
+                }
+
+            } else {
+                builder.delete(0, builder.length());
+
+                long msgid = obj.getLong("msg_id");
+                if (msgid == 1) {
+                    return;
+                }
+                String step = obj.getString("step").trim();
+                if (!target_Steps.contains(step)) {
+                    return;
+                }
+                String appkey = "null";
+                if (obj.containsKey("appkey")) {
+                    appkey = obj.getString("appkey").trim();
+                }
+                String platform = "null";
+                if (obj.containsKey("platform")) {
+                    platform = obj.getString("platform").toLowerCase();
+                }
+                long itime = obj.getLong("itime");
+                long uid = obj.getLong("uid");
+
+                builder.append(appkey).append(HIVE_SEP).append(platform)
+                        .append(HIVE_SEP).append(msgid).append(HIVE_SEP)
+                        .append(uid).append(HIVE_SEP).append(itime);
+
+                // LOG.info(builder.toString());
+                producer.send(new ProducerRecord<String, String>(topic, builder
+                        .toString()));
+            }
+
+        } catch (Exception e) {
+            LOG.error("process error", e);
+        }
+    }
+
+    @Override
+    public void declareOutputFields(OutputFieldsDeclarer declarer) {
+
+    }
+
+    @Override
+    public void deactivate() {
+        if (null != loader) {
+            loader.close();
+            loader = null;
+        }
+        if (null != producer) {
+            try {
+                producer.close();
+            } catch (Exception e) {
+                LOG.error("Failed to close producer.", e);
+            }
+        }
+
+    }
+
+    private void connectMQ() {
+        int i = 0;
+        while (i < 5) {
+            try {
+                loader = new MQConsumer(key, true,
+                        new HashMap<String, Object>());
+                LOG.info("reconnect mq success " + key);
+                break;
+            } catch (Exception e) {
+                i++;
+                loader.close();
+                LOG.error("reconnect mq error " + key, e);
+                try {
+                    Thread.sleep(MQ_RECONN_SLEEP);
+                } catch (InterruptedException e1) {
+                    LOG.error("mq reconnect sleep error", e);
+                }
+            }
+        }
+    }
+
+    private void reconnectKafka() {
+        LOG.info("Reconnect kafka");
+        try {
+            producer.close();
+        } catch (Exception e) {
+            LOG.error("Failed to close producer.", e);
+        }
+        initKafkaProducer();
+    }
+
+}
